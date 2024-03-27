@@ -42,13 +42,14 @@ $domain, $user = ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 #$transcriptLogPath2 = "\\mySecure\Log\location\OneDriveMigration_$($env:USERNAME)_$scriptStartTime.log"
 
 #Define the user's home folder location using the currently logged on user's name
-$userHomeDrive = "\\dsa.reldom.tamu.edu\student affairs\Departments\Information Technology\Staff\cctest"
+#Example: "\\mydomain\staff"
+$userHomeDrive = ""
 
 #Define the local user folder path (C:\users\$username)
 $userFolderPath = [System.Environment]::GetFolderPath('UserProfile')
 
 # Define the location inside of the OneDrive folder that the files will migrate to
-$migrationDest = Join-Path -Path $userFolderPath -ChildPath ("OneDrive - Texas A&M University\Documents\" + ($user.Substring(0,1).ToUpper() + $user.Substring(1) + " OneDrive Migration Files " + (Get-Date -Format "yyyy-MM-dd HH_mm_ss")))
+$migrationDest = Join-Path -Path $userFolderPath -ChildPath ("OneDrive - Texas A&M University\Documents\" + ($user.Substring(0, 1).ToUpper() + $user.Substring(1) + " OneDrive Migration Files " + (Get-Date -Format "yyyy-MM-dd HH_mm_ss")))
 
 
 # Check if migration has already been completed previously, flag is set in User's Home Drive location
@@ -148,7 +149,7 @@ function CheckOneDrive {
             Start-Process -FilePath $onedriveExePath -ErrorAction Stop
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Failed to start OneDrive. Please contact the Student Affairs Helpdesk for assistance.", "DSA Home Folder Migration", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            [System.Windows.Forms.MessageBox]::Show("Failed to start OneDrive. Please contact the IT Support for assistance.", "OneDrive Migration", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
             Write-Warning "One Drive failed to open or it is already opened and logged in."
         }
         return $false
@@ -379,7 +380,7 @@ if ($ReadyToBeginMigrationPrompt -eq [System.Windows.Forms.DialogResult]::Cancel
 $logTimeStamp = Get-Date -Format "yyyyMMddHHmmss"
 $robocopyLogPath = "C:\logs\OneDriveMigration\Robocopy_$user`_$logTimeStamp.log"
 
-if(-not (Test-path $migrationDest)){new-item -ItemType Directory -Path $migrationDest}
+if (-not (Test-path $migrationDest)) { new-item -ItemType Directory -Path $migrationDest }
 
 if ((Test-Path $userHomeDrive) -and (test-path $migrationDest)) {
     
@@ -399,7 +400,7 @@ if ((Test-Path $userHomeDrive) -and (test-path $migrationDest)) {
 $sourceFilesCompare = Get-FileList -folderPath $userHomeDrive
 $destFilesCompare = Get-FileList -folderPath $migrationDest
 
-$missingFiles = $sourceFilesCompare | Where-Object { $_ -notin $destFilesCompare}
+$missingFiles = $sourceFilesCompare | Where-Object { $_ -notin $destFilesCompare }
 
 
 if ($missingFiles.Count -gt 0) {
@@ -429,6 +430,5 @@ write-output $migrationDest
 # After OK is pressed, open the windows for all the content
 
 Start-Process "explorer.exe" -ArgumentList $migrationDest
-
 
 Stop-Transcript
