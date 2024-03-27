@@ -16,7 +16,7 @@ These scripts are provided to TAMU Technology Services staff for migrating from 
 - Thanks to the TAMU IT community for your interest in these scripts.  
  
 
-Script Notes:  
+### Script Notes:  
 
 **ComputerLogon-OneDriveMigration.ps1**  
 **- Variables to set:** $userHomeDrive  
