@@ -1,14 +1,15 @@
 <#
 .SYNOPSIS
-  Guides user migration of their legacy homedirectory to OneDrive 
+  OneDrive File Migration Script
 .DESCRIPTION
   Script checks for necessary permissions and staging requirements before guiding user through migration progress
 .PARAMETER <Parameter_Name>
-    <Brief description of parameter input required. Repeat this attribute if required>
+  No paramters required, adjust script settings in "[Initializations]" section
 .INPUTS
   None
 .OUTPUTS
-  Log file stored in "C:\logs\OneDriveMigration\Transcript_$($env:USERNAME)_$scriptStartTime.log"
+  Transcript stored in "C:\logs\OneDriveMigration\Transcript_$($env:USERNAME)_$scriptStartTime.log"
+  Missing Files list stored in "C:\logs\OneDriveMigration\MissingFiles_$(Get-Date -Format "yyyyMMdd_HHmmss")_$user.log"
 .NOTES
   Version:        0.9
   Author:         Callan Christensen callan@tamu.edu
@@ -41,10 +42,14 @@ $domain, $user = ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 #$transcriptLogPath2 = "\\mySecure\Log\location\OneDriveMigration_$($env:USERNAME)_$scriptStartTime.log"
 
 #Define the user's home folder location using the currently logged on user's name
-$userHomeDrive = "\\domain\staff\$user"
+$userHomeDrive = "\\dsa.reldom.tamu.edu\student affairs\Departments\Information Technology\Staff\cctest"
 
-#Define the local user folder path
+#Define the local user folder path (C:\users\$username)
 $userFolderPath = [System.Environment]::GetFolderPath('UserProfile')
+
+# Define the location inside of the OneDrive folder that the files will migrate to
+$migrationDest = Join-Path -Path $userFolderPath -ChildPath ("OneDrive - Texas A&M University\Documents\" + ($user.Substring(0,1).ToUpper() + $user.Substring(1) + " OneDrive Migration Files " + (Get-Date -Format "yyyy-MM-dd HH_mm_ss")))
+
 
 # Check if migration has already been completed previously, flag is set in User's Home Drive location
 
@@ -54,8 +59,8 @@ if (Test-Path $flagPattern) {
     exit
 }
 
-# Test the path to $DSAUserHomeDrive 
-if (-not (Test-Path $DSAUserHomeDrive)) {
+# Test the path to $userHomeDrive 
+if (-not (Test-Path $userHomeDrive)) {
     Write-Warning "User $User network home drive not acessible, it either doesn't exist or there is a user permission missing."
     Stop-Transcript
     exit
@@ -93,7 +98,8 @@ function Test-UserReadPermission {
     )
     $fullUserName = "$env:USERDOMAIN\$user"
     $acl = Get-Acl -Path $path
-    $readRights = [System.Security.AccessControl.FileSystemRights]::Read
+    # If you are writing the .flag file to the folder when you are done, more than READ permission is necessary
+    #$readRights = [System.Security.AccessControl.FileSystemRights]::Read
     $modifyRights = [System.Security.AccessControl.FileSystemRights]::Modify
     $fullControlRights = [System.Security.AccessControl.FileSystemRights]::FullControl
 
@@ -137,7 +143,14 @@ function CheckOneDrive {
 
     $oneDriveFolderPath = "$env:USERPROFILE\OneDrive - Texas A&M University"
     if (-not (Test-Path $oneDriveFolderPath)) {
-        Write-Warning "OneDrive folder not found. Please login to OneDrive with your NetID."
+        # Open OneDrive and hopefully user will sign in and press retry
+        try {
+            Start-Process -FilePath $onedriveExePath -ErrorAction Stop
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Failed to start OneDrive. Please contact the Student Affairs Helpdesk for assistance.", "DSA Home Folder Migration", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            Write-Warning "One Drive failed to open or it is already opened and logged in."
+        }
         return $false
     }
 
@@ -165,7 +178,7 @@ $TeamswatchdogScript = {
     $startTime = Get-Date
     $foundAndMinimized = $false
     while ((New-TimeSpan -Start $startTime -End (Get-Date)).TotalMinutes -lt 1 -and !$foundAndMinimized) {
-        $hWnd = [User32]::FindWindow(null, "Microsoft Teams")
+        $hWnd = [User32]::FindWindow([NullString]::Value, "Microsoft Teams")
         if ($hWnd -ne [IntPtr]::Zero) {
             [User32]::ShowWindow($hWnd, 2)  # 2 = SW_MINIMIZE
             $foundAndMinimized = $true
@@ -312,17 +325,14 @@ Start-Process PowerShell.exe -ArgumentList "-NoProfile -EncodedCommand $OneDrive
 
 # Convert the Teams watchdog to a Base64 encoded string to avoid character limits
 $OneDrive2bytes = [System.Text.Encoding]::Unicode.GetBytes($OneDrivePromptWatchdog.ToString())
-$OneDrivePromptWatchdogEncodedCommand = [Convert]::ToBase64String($bytes)
+$OneDrivePromptWatchdogEncodedCommand = [Convert]::ToBase64String($OneDrive2bytes)
 
 #Start the OneDrive "Back Up Folder on this PC" user prompt catch/exit watchdog
 Start-Process PowerShell.exe -ArgumentList "-NoProfile -EncodedCommand $OneDrivePromptWatchdogEncodedCommand" -WindowStyle Hidden
 
 # File Migration Start
 
-# Define Destination Path
-$MigrationDest = Join-Path -Path $userFolderPath -ChildPath "OneDrive - Texas A&M University\Documents\${user} Personal Files"
-
-$hasPermission = Test-UserReadPermission -path $MigrationDest -authuser $user -domain $domain
+$hasPermission = Test-UserReadPermission -path $userHomeDrive -user $user -domain $domain
 
 # If user doesn't have permission to their home directory, show a popup and exit
 if (-not $hasPermission) {
@@ -361,7 +371,7 @@ $ReadyToBeginMigrationPrompt = [System.Windows.Forms.MessageBox]::Show('To begin
 
 if ($ReadyToBeginMigrationPrompt -eq [System.Windows.Forms.DialogResult]::Cancel) {
     # User clicked Cancel, exit script
-    Write-Warning "User exited after Signing into OneDrive but before running the migration."
+    Write-Warning "User exited after signing into OneDrive but before running the migration."
     Stop-Transcript
     exit
 }
@@ -369,4 +379,56 @@ if ($ReadyToBeginMigrationPrompt -eq [System.Windows.Forms.DialogResult]::Cancel
 $logTimeStamp = Get-Date -Format "yyyyMMddHHmmss"
 $robocopyLogPath = "C:\logs\OneDriveMigration\Robocopy_$user`_$logTimeStamp.log"
 
+if(-not (Test-path $migrationDest)){new-item -ItemType Directory -Path $migrationDest}
 
+if ((Test-Path $userHomeDrive) -and (test-path $migrationDest)) {
+    
+    robocopy $userHomeDrive $migrationDest /E /Z /LOG+:$robocopyLogPath /NP /R:3 /W:3 /TEE /COPY:DAT /XO /XF desktop.ini
+    
+    <#Robocopy Mirror Purge Option (This option uses the "mirror" flag which can copy if the files are locked)
+    robocopy $desktopSource $desktopDest /MIR /COPY:DAT /V /LOG+:$robocopyLogPath /XF "desktop.ini"
+    #>
+    # Removes potential desktop.ini from destination since robocopy doesn't seem to always respect file exclusions
+    
+    $desktopIniPath = Join-Path -Path $migrationDest -ChildPath "desktop.ini"
+    if (Test-Path $desktopIniPath) {
+        Remove-Item -Path $desktopIniPath -Force
+    }
+}
+
+$sourceFilesCompare = Get-FileList -folderPath $userHomeDrive
+$destFilesCompare = Get-FileList -folderPath $migrationDest
+
+$missingFiles = $sourceFilesCompare | Where-Object { $_ -notin $destFilesCompare}
+
+
+if ($missingFiles.Count -gt 0) {
+    $logPath = "C:\logs\OneDriveMigration\MissingFiles_$(Get-Date -Format "yyyyMMdd_HHmmss")_$user.log"
+    $missingFiles | Out-File -filepath $logPath
+    [System.Windows.Forms.MessageBox]::Show("Some files may not have copied successfully. Press `"OK`" to open the file copy log. Please contact IT Support if an important file is missing.", 'OneDrive Migration', 'OK', 'Warning')
+    # Open the log in Notepad
+    Start-Process -FilePath "notepad.exe" -ArgumentList $logPath
+}
+
+# Create migration completion flag and placing it in their Home Drive 
+# Be sure your users can write to the root of the $userHomeDrive, or change the path to somewhere they can
+$flagFileName = "MigrationCompleted_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".flag"
+$flagPath = Join-Path -Path $userHomeDrive -ChildPath $flagFileName
+New-Item -Path $flagPath -ItemType File
+
+
+# Create a form
+$form = New-Object Windows.Forms.Form
+$form.TopMost = $true
+
+# Create a message box with an OK button
+[System.Windows.Forms.MessageBox]::Show($form, 'OneDrive Migration was completed. Press OK to view the migrated content.', 'OneDrive Migration Completed', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+
+write-output $migrationDest
+
+# After OK is pressed, open the windows for all the content
+
+Start-Process "explorer.exe" -ArgumentList $migrationDest
+
+
+Stop-Transcript
