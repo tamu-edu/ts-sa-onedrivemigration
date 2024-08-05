@@ -24,4 +24,4 @@ These scripts are provided to TAMU Technology Services staff for migrating from 
 
 **Get-StaffFolderSizes.ps1**  
 **- Variables to set:** $staffFolderLocation  
-**- Use:** Admin reporting tool, outputs a descending list of staff folder sizes  
+**- Use:** Admin reporting tool - outputs a descending list of staff folder sizes  
